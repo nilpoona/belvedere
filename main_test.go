@@ -20,6 +20,60 @@ type (
 	FooBarHogeFuga struct{}
 )
 
+func TestTableInfo_Values(t *testing.T) {
+	data := []struct {
+		name string
+		in   User
+		want string
+	}{
+		{
+			name: "get user table columns `id,name,profile,creatd_at,updated_at`",
+			in: User{
+				ID: uint32(2),
+				Name: "foobar",
+				Profile: "profile",
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+			want: "id,name,profile,created_at,updated_at",
+		},
+	}
+
+	for _, d := range data {
+		tableInfo := newTableInfo(&d.in)
+		t.Log(tableInfo.Values())
+		/*
+		cnames := tableInfo.ColumnNames()
+		if cnames != d.want {
+			t.Errorf("The column names is not the value you expected expected: %s current value: %s", d.want, cnames)
+		}
+		*/
+	}
+}
+
+func TestTableInfo_ColumnNames(t *testing.T) {
+	data := []struct {
+		name string
+		in   User
+		want string
+	}{
+		{
+			name: "get user table columns `id,name,profile,creatd_at,updated_at`",
+			in: User{},
+			want: "id,name,profile,created_at,updated_at",
+		},
+	}
+
+	for _, d := range data {
+		t.Log(d.name)
+		tableInfo := newTableInfo(d.in)
+		cnames := tableInfo.ColumnNames()
+		if cnames != d.want {
+			t.Errorf("The column names is not the value you expected expected: %s current value: %s", d.want, cnames)
+		}
+	}
+}
+
 func TestGetTableNameFromTypeName(t *testing.T) {
 	data := []struct {
 		name string
