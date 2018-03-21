@@ -1,13 +1,15 @@
 package belvedere
 
 import (
-	"database/sql"
+	"bytes"
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
-	"bytes"
-	"fmt"
+	"time"
 )
 
 var repGetTableName = regexp.MustCompile(`^.+\.([^.]*?)$`)
@@ -24,13 +26,13 @@ type (
 	}
 
 	tableInfo struct {
-		Name string
+		Name        string
 		ColumnValue reflect.Value
-		ColumnInfo reflect.Type
+		ColumnInfo  reflect.Type
 	}
 )
 
-func (ti *tableInfo) Values() []interface{} {
+func (ti *tableInfo) Values() ([]interface{}, error) {
 	var values []interface{}
 	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
 		f := ti.ColumnValue.Field(i)
@@ -52,14 +54,23 @@ func (ti *tableInfo) Values() []interface{} {
 					values = append(values, 0)
 				}
 			case reflect.Struct:
-				values = append(values, f.String())
+				i := f.Interface()
+				if f.Type().String() == "time.Time" {
+					if value, ok := i.(time.Time); ok {
+						values = append(values, value)
+					} else {
+						return nil, errors.New("cannot convert this type")
+					}
+				} else {
+					return nil, errors.New("cannot convert this type")
+				}
 			default:
 				fmt.Println(f.Kind())
 			}
 		}
 	}
 
-	return values
+	return values, nil
 }
 
 // ColumnNames Retrieve comma-separated column names.
@@ -67,7 +78,7 @@ func (ti *tableInfo) ColumnNames() string {
 	var buf bytes.Buffer
 	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
 		columnName := camelToSnake(ti.ColumnInfo.Field(i).Name)
-		isLast := i == ti.ColumnInfo.NumField() - 1
+		isLast := i == ti.ColumnInfo.NumField()-1
 		if isLast {
 			buf.WriteString(columnName)
 		} else {
@@ -97,9 +108,9 @@ func newTableInfo(src interface{}) *tableInfo {
 	t := v.Type()
 
 	return &tableInfo{
-		Name: tableName,
+		Name:        tableName,
 		ColumnValue: v,
-		ColumnInfo: t,
+		ColumnInfo:  t,
 	}
 }
 
@@ -123,5 +134,5 @@ func NewBelvedere(driver, dataSorceName string) (QueryBuilder, error) {
 		return nil, e
 	}
 
-	return &Belvedere{ db: db }, nil
+	return &Belvedere{db: db}, nil
 }

@@ -1,53 +1,70 @@
 package belvedere
 
 import (
+	"reflect"
 	"testing"
 	"time"
-	"reflect"
 )
 
 type (
 	User struct {
-		ID uint32
-		Name string
-		Profile string
+		ID        uint32
+		Name      string
+		Profile   string
 		CreatedAt time.Time
 		UpdatedAt time.Time
 	}
 
-	FooBar struct {}
-	FooBarHoge struct {}
+	FooBar         struct{}
+	FooBarHoge     struct{}
 	FooBarHogeFuga struct{}
 )
 
+func nowTime() time.Time {
+	return time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC)
+}
+
 func TestTableInfo_Values(t *testing.T) {
+	mockNow := nowTime()
 	data := []struct {
 		name string
 		in   User
-		want string
+		want []interface{}
+		err  error
 	}{
 		{
-			name: "get user table columns `id,name,profile,creatd_at,updated_at`",
+			name: "get user table values",
 			in: User{
-				ID: uint32(2),
-				Name: "foobar",
-				Profile: "profile",
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				ID:        uint32(2),
+				Name:      "foobar",
+				Profile:   "profile",
+				CreatedAt: mockNow,
+				UpdatedAt: mockNow,
 			},
-			want: "id,name,profile,created_at,updated_at",
+			want: []interface{}{
+				uint64(2),
+				"foobar",
+				"profile",
+				mockNow,
+				mockNow,
+			},
+			err: nil,
 		},
 	}
 
 	for _, d := range data {
 		tableInfo := newTableInfo(&d.in)
-		t.Log(tableInfo.Values())
-		/*
-		cnames := tableInfo.ColumnNames()
-		if cnames != d.want {
-			t.Errorf("The column names is not the value you expected expected: %s current value: %s", d.want, cnames)
+		t.Log(d.name)
+		values, e := tableInfo.Values()
+		if e != d.err {
+			t.Errorf("The error is not the value you expected expected: %v current value: %v", d.err, e)
 		}
-		*/
+
+		for i, v := range values {
+			if v != d.want[i] {
+				t.Errorf("The column values is not the value you expected expected: %v current value: %v", d.want[i], v)
+			}
+		}
 	}
 }
 
@@ -59,7 +76,7 @@ func TestTableInfo_ColumnNames(t *testing.T) {
 	}{
 		{
 			name: "get user table columns `id,name,profile,creatd_at,updated_at`",
-			in: User{},
+			in:   User{},
 			want: "id,name,profile,created_at,updated_at",
 		},
 	}
@@ -82,22 +99,22 @@ func TestGetTableNameFromTypeName(t *testing.T) {
 	}{
 		{
 			name: "get table name user.",
-			in: reflect.TypeOf(User{}),
+			in:   reflect.TypeOf(User{}),
 			want: "user",
 		},
 		{
 			name: "get table name foo_bar.",
-			in: reflect.TypeOf(FooBar{}),
+			in:   reflect.TypeOf(FooBar{}),
 			want: "foo_bar",
 		},
 		{
 			name: "get table name foo_bar_hoge.",
-			in: reflect.TypeOf(FooBarHoge{}),
+			in:   reflect.TypeOf(FooBarHoge{}),
 			want: "foo_bar_hoge",
 		},
 		{
 			name: "get table name foo_bar_hoge_fuga.",
-			in: reflect.TypeOf(FooBarHogeFuga{}),
+			in:   reflect.TypeOf(FooBarHogeFuga{}),
 			want: "foo_bar_hoge_fuga",
 		},
 	}
