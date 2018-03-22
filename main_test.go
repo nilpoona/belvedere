@@ -1,6 +1,7 @@
 package belvedere
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 
 type (
 	User struct {
-		ID        uint32
+		ID        uint32 `pk:"true"`
 		Name      string
 		Profile   string
 		CreatedAt time.Time
@@ -27,10 +28,11 @@ func nowTime() time.Time {
 func TestTableInfo_Values(t *testing.T) {
 	mockNow := nowTime()
 	data := []struct {
-		name string
-		in   User
-		want []interface{}
-		err  error
+		name      string
+		in        User
+		want      []interface{}
+		err       error
+		excludePk bool
 	}{
 		{
 			name: "get user table values",
@@ -48,14 +50,33 @@ func TestTableInfo_Values(t *testing.T) {
 				mockNow,
 				mockNow,
 			},
-			err: nil,
+			err:       nil,
+			excludePk: false,
+		},
+		{
+			name: "get user table values",
+			in: User{
+				ID:        uint32(2),
+				Name:      "foobar",
+				Profile:   "profile",
+				CreatedAt: mockNow,
+				UpdatedAt: mockNow,
+			},
+			want: []interface{}{
+				"foobar",
+				"profile",
+				mockNow,
+				mockNow,
+			},
+			err:       nil,
+			excludePk: true,
 		},
 	}
 
 	for _, d := range data {
 		tableInfo := newTableInfo(&d.in)
 		t.Log(d.name)
-		values, e := tableInfo.Values()
+		values, e := tableInfo.Values(d.excludePk)
 		if e != d.err {
 			t.Errorf("The error is not the value you expected expected: %v current value: %v", d.err, e)
 		}
@@ -70,24 +91,68 @@ func TestTableInfo_Values(t *testing.T) {
 
 func TestTableInfo_ColumnNames(t *testing.T) {
 	data := []struct {
-		name string
-		in   User
-		want string
+		name      string
+		in        User
+		want      string
+		excludePk bool
 	}{
 		{
-			name: "get user table columns `id,name,profile,creatd_at,updated_at`",
-			in:   User{},
-			want: "id,name,profile,created_at,updated_at",
+			name:      "get user table columns `id,name,profile,creatd_at,updated_at`",
+			in:        User{},
+			want:      "id,name,profile,created_at,updated_at",
+			excludePk: false,
+		},
+		{
+			name:      "get user table columns `name,profile,creatd_at,updated_at`",
+			in:        User{},
+			want:      "name,profile,created_at,updated_at",
+			excludePk: true,
 		},
 	}
 
 	for _, d := range data {
 		t.Log(d.name)
 		tableInfo := newTableInfo(d.in)
-		cnames := tableInfo.ColumnNames()
+		cnames := tableInfo.ColumnNames(d.excludePk)
 		if cnames != d.want {
 			t.Errorf("The column names is not the value you expected expected: %s current value: %s", d.want, cnames)
 		}
+	}
+}
+
+func TestBelvedere_Insert(t *testing.T) {
+	mockNow := nowTime()
+	data := []struct {
+		name string
+		in   User
+		err  error
+	}{
+		{
+			name: "insert user record.",
+			in: User{
+				Name:      "foo",
+				Profile:   "foobar",
+				CreatedAt: mockNow,
+				UpdatedAt: mockNow,
+			},
+			err: nil,
+		},
+	}
+
+	b, e := NewBelvedere("mysql", "root:root@/test")
+	if e != nil {
+		t.Fail()
+	}
+
+	ctx, _ := context.WithCancel(context.Background())
+
+	for _, d := range data {
+		t.Log(d.name)
+		_, e := b.Insert(ctx, &d.in)
+		if e != d.err {
+			t.Errorf("The error is not the value you expected expected: %v current value: %v", d.err, e)
+		}
+		// tableName := getTableNameFromTypeName(d.in)
 	}
 }
 

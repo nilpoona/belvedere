@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 var repGetTableName = regexp.MustCompile(`^.+\.([^.]*?)$`)
@@ -17,7 +19,7 @@ var repUppercaseLetter = regexp.MustCompile(`([^A-Z])([A-Z])`)
 
 type (
 	QueryBuilder interface {
-		Insert(ctx context.Context, src interface{}) error
+		Insert(ctx context.Context, src interface{}) (sql.Result, error)
 	}
 
 	// Belvedere query builder struct
@@ -27,15 +29,32 @@ type (
 
 	tableInfo struct {
 		Name        string
+		Pk          pk
 		ColumnValue reflect.Value
 		ColumnInfo  reflect.Type
 	}
+
+	pk struct {
+		Name  string
+		Index int
+	}
 )
 
-func (ti *tableInfo) Values() ([]interface{}, error) {
+func (p pk) SameName(name string) bool {
+	return name == p.Name
+}
+
+func (p pk) SameIndex(index int) bool {
+	return index == p.Index
+}
+
+func (ti *tableInfo) Values(excludePk bool) ([]interface{}, error) {
 	var values []interface{}
 	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
 		f := ti.ColumnValue.Field(i)
+		if excludePk && ti.Pk.SameIndex(i) {
+			continue
+		}
 		if f.IsValid() {
 			switch f.Kind() {
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -73,11 +92,35 @@ func (ti *tableInfo) Values() ([]interface{}, error) {
 	return values, nil
 }
 
+func (ti *tableInfo) StatementString(excludePk bool) string {
+	valuesNum := ti.ColumnValue.NumField()
+	if excludePk {
+		valuesNum = valuesNum - 1
+	}
+
+	var buf []byte
+	for i := 0; i < valuesNum; i++ {
+		buf = append(buf, '?')
+		if i != valuesNum-1 {
+			buf = append(buf, ',')
+		}
+	}
+
+	return string(buf)
+}
+
 // ColumnNames Retrieve comma-separated column names.
-func (ti *tableInfo) ColumnNames() string {
+func (ti *tableInfo) ColumnNames(excludePk bool) string {
 	var buf bytes.Buffer
-	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
+	var columnNum int
+
+	columnNum = ti.ColumnInfo.NumField()
+	for i := 0; i < columnNum; i++ {
 		columnName := camelToSnake(ti.ColumnInfo.Field(i).Name)
+		if excludePk && ti.Pk.SameName(columnName) {
+			continue
+		}
+
 		isLast := i == ti.ColumnInfo.NumField()-1
 		if isLast {
 			buf.WriteString(columnName)
@@ -107,20 +150,58 @@ func newTableInfo(src interface{}) *tableInfo {
 	v := reflect.Indirect(reflect.ValueOf(src))
 	t := v.Type()
 
+	var pkName string
+	var pkIndex int
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		pk := field.Tag.Get("pk")
+		if pk == "" {
+			continue
+		}
+
+		pkName = field.Name
+		pkIndex = i
+	}
+
+	pk := pk{
+		Name:  camelToSnake(pkName),
+		Index: pkIndex,
+	}
+
 	return &tableInfo{
 		Name:        tableName,
+		Pk:          pk,
 		ColumnValue: v,
 		ColumnInfo:  t,
 	}
 }
 
 // Insert
-func (b *Belvedere) Insert(ctx context.Context, src interface{}) error {
+func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, error) {
 	tableInfo := newTableInfo(src)
-	columnNames := tableInfo.ColumnNames()
-	fmt.Println(columnNames)
+	columnNames := tableInfo.ColumnNames(true)
+	values, e := tableInfo.Values(true)
 
-	return nil
+	if e != nil {
+		return nil, e
+	}
+
+	statementString := tableInfo.StatementString(true)
+	q := fmt.Sprintf("INSERT INTO %s(%s) VALUES(%s)", tableInfo.Name, columnNames, statementString)
+
+	stmt, e := b.db.PrepareContext(ctx, q)
+
+	if e != nil {
+		return nil, e
+	}
+
+	result, e := stmt.ExecContext(ctx, values...)
+
+	if e != nil {
+		return nil, e
+	}
+
+	return result, nil
 }
 
 func NewBelvedere(driver, dataSorceName string) (QueryBuilder, error) {
