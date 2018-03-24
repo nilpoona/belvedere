@@ -20,7 +20,15 @@ var repUppercaseLetter = regexp.MustCompile(`([^A-Z])([A-Z])`)
 type (
 	QueryBuilder interface {
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
+		Select(ctx context.Context, dst interface{}, options ...CreateSelectOptionFnc) error
 	}
+
+	SelectOption interface {
+		Conditions() string
+		Params() []interface{}
+	}
+
+	CreateSelectOptionFnc func(conditions string, args ...interface{}) SelectOption
 
 	// Belvedere query builder struct
 	Belvedere struct {
@@ -38,7 +46,20 @@ type (
 		Name  string
 		Index int
 	}
+
+	where struct {
+		conditions string
+		args       []interface{}
+	}
 )
+
+func (w *where) Conditions() string {
+	return w.conditions
+}
+
+func (w *where) Params() []interface{} {
+	return w.args
+}
 
 func (p pk) SameName(name string) bool {
 	return name == p.Name
@@ -202,6 +223,18 @@ func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, er
 	}
 
 	return result, nil
+}
+
+func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...CreateSelectOptionFnc) error {
+	// tableInfo := newTableInfo(dst)
+	return nil
+}
+
+func Where(conditions string, args ...interface{}) SelectOption {
+	return &where{
+		conditions: conditions,
+		args:       args,
+	}
 }
 
 func NewBelvedere(driver, dataSorceName string) (QueryBuilder, error) {
