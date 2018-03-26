@@ -14,21 +14,23 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-var repGetTableName = regexp.MustCompile(`^.+\.([^.]*?)$`)
-var repUppercaseLetter = regexp.MustCompile(`([^A-Z])([A-Z])`)
-
 type (
 	QueryBuilder interface {
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
-		Select(ctx context.Context, dst interface{}, options ...CreateSelectOptionFnc) error
+		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error
 	}
+
+	SelectOptionType string
 
 	SelectOption interface {
 		Conditions() string
 		Params() []interface{}
+		Type() SelectOptionType
 	}
 
-	CreateSelectOptionFnc func(conditions string, args ...interface{}) SelectOption
+	NewSelectOption func() SelectOption
+
+	CreateSelectOptionFnc func(conditions string, args ...interface{}) NewSelectOption
 
 	// Belvedere query builder struct
 	Belvedere struct {
@@ -53,12 +55,28 @@ type (
 	}
 )
 
+var selectOptionTypeWhere = SelectOptionType("where")
+var repGetTableName = regexp.MustCompile(`^.+\.([^.]*?)$`)
+var repUppercaseLetter = regexp.MustCompile(`([^A-Z])([A-Z])`)
+
+func (st SelectOptionType) Equal(t SelectOptionType) bool {
+	return t.String() == st.String()
+}
+
+func (st SelectOptionType) String() string {
+	return string(st)
+}
+
 func (w *where) Conditions() string {
 	return w.conditions
 }
 
 func (w *where) Params() []interface{} {
 	return w.args
+}
+
+func (w *where) Type() SelectOptionType {
+	return selectOptionTypeWhere
 }
 
 func (p pk) SameName(name string) bool {
@@ -76,6 +94,7 @@ func (ti *tableInfo) Values(excludePk bool) ([]interface{}, error) {
 		if excludePk && ti.Pk.SameIndex(i) {
 			continue
 		}
+		// TODO: JSON Type
 		if f.IsValid() {
 			switch f.Kind() {
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -225,15 +244,54 @@ func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, er
 	return result, nil
 }
 
-func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...CreateSelectOptionFnc) error {
-	// tableInfo := newTableInfo(dst)
+func buildWhereClause(selectOptions []SelectOption) (string, []interface{}) {
+	var buf bytes.Buffer
+	var values []interface{}
+	buf.WriteString(" WHERE ")
+	for _, option := range selectOptions {
+		t := option.Type()
+		if t.Equal(selectOptionTypeWhere) {
+			buf.WriteString(option.Conditions())
+			for _, v := range option.Params() {
+				values = append(values, v)
+			}
+		}
+	}
+	return buf.String(), values
+}
+
+func newSelectOption(optionFncs ...NewSelectOption) []SelectOption {
+	options := make([]SelectOption, len(optionFncs))
+	for i, optionFnc := range optionFncs {
+		option := optionFnc()
+		options[i] = option
+	}
+
+	return options
+}
+
+func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
+	tableInfo := newTableInfo(dst)
+	// TODO: select field name
+	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
+	selectOptions := newSelectOption(options...)
+	whereClause, whereParams := buildWhereClause(selectOptions)
+	q = q + whereClause
+
+	stmt, e := b.db.PrepareContext(ctx, q)
+	if e != nil {
+		return e
+	}
+
 	return nil
 }
 
-func Where(conditions string, args ...interface{}) SelectOption {
-	return &where{
-		conditions: conditions,
-		args:       args,
+func Where(conditions string, args ...interface{}) NewSelectOption {
+	return func() SelectOption {
+		return &where{
+			conditions: conditions,
+			args:       args,
+		}
 	}
 }
 
