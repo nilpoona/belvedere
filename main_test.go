@@ -120,6 +120,26 @@ func TestTableInfo_ColumnNames(t *testing.T) {
 	}
 }
 
+func TestBelvedere_Select(t *testing.T) {
+	ctx, _ := context.WithCancel(context.Background())
+	b, e := NewBelvedere("mysql", "root:root@/test")
+	mockNow := nowTime()
+	if e != nil {
+		t.Fail()
+	}
+
+	dst := []User{
+		User{
+				Name:      "foo",
+				Profile:   "foobar",
+				CreatedAt: mockNow,
+				UpdatedAt: mockNow,
+		},
+	}
+
+	e = b.Select(ctx, &dst, Where("id = ?", 1))
+}
+
 func TestBelvedere_Insert(t *testing.T) {
 	mockNow := nowTime()
 	data := []struct {

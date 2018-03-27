@@ -87,6 +87,48 @@ func (p pk) SameIndex(index int) bool {
 	return index == p.Index
 }
 
+func (ti *tableInfo) FieldPts() ([]interface{}, error) {
+	var pts []interface{}
+	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
+		f := ti.ColumnValue.Field(i)
+		// TODO: JSON Type
+		if f.IsValid() {
+			switch f.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				value := f.Int()
+				pts = append(pts, &value)
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+				value := f.Uint()
+				pts = append(pts, &value)
+			case reflect.Float32, reflect.Float64:
+				value := f.Float()
+				pts = append(pts, &value)
+			case reflect.String:
+				value := f.String()
+				pts = append(pts, &value)
+			case reflect.Bool:
+				var value int
+				pts = append(pts, &value)
+			case reflect.Struct:
+				i := f.Interface()
+				if f.Type().String() == "time.Time" {
+					if value, ok := i.(time.Time); ok {
+						pts = append(pts, &value)
+					} else {
+						return nil, errors.New("cannot convert this type")
+					}
+				} else {
+					return nil, errors.New("cannot convert this type")
+				}
+			default:
+				fmt.Println(f.Kind())
+			}
+		}
+	}
+
+	return pts, nil
+}
+
 func (ti *tableInfo) Values(excludePk bool) ([]interface{}, error) {
 	var values []interface{}
 	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
@@ -272,16 +314,46 @@ func newSelectOption(optionFncs ...NewSelectOption) []SelectOption {
 
 func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
 	tableInfo := newTableInfo(dst)
-	// TODO: select field name
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
 	selectOptions := newSelectOption(options...)
-	whereClause, whereParams := buildWhereClause(selectOptions)
+	whereClause, _ := buildWhereClause(selectOptions)
 	q = q + whereClause
 
+	v := reflect.Indirect(reflect.ValueOf(dst))
+	t := v.Type()
+	kind := v.Kind()
+
+	if kind == reflect.Slice {
+		st := reflect.SliceOf(t)
+		fmt.Println(st.String())
+	}
+
+	/*
 	stmt, e := b.db.PrepareContext(ctx, q)
 	if e != nil {
 		return e
 	}
+
+	rows, e := stmt.QueryContext(ctx, whereParams...)
+	if e != nil {
+		return e
+	}
+
+	defer rows.Close()
+
+	pts, e := tableInfo.FieldPts()
+	if e != nil {
+		return e
+	}
+
+
+
+	for rows.Next() {
+		if e = rows.Scan(pts...); e != nil {
+			return e
+		}
+	}
+	*/
 
 	return nil
 }
