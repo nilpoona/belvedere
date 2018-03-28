@@ -17,7 +17,7 @@ import (
 type (
 	QueryBuilder interface {
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
-		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error
+		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) (*SelectResult, error)
 	}
 
 	SelectOptionType string
@@ -35,6 +35,10 @@ type (
 	// Belvedere query builder struct
 	Belvedere struct {
 		db *sql.DB
+	}
+
+	SelectResult struct {
+		results []interface{}
 	}
 
 	tableInfo struct {
@@ -85,6 +89,26 @@ func (p pk) SameName(name string) bool {
 
 func (p pk) SameIndex(index int) bool {
 	return index == p.Index
+}
+
+func (st *SelectResult) Result() interface{} {
+	length := len(st.results)
+	if length == 0 {
+		return nil
+	} else if length == 1 {
+		return st.results[0]
+	} else {
+		return st.results
+	}
+}
+
+func (st *SelectResult) Set(values ...interface{}) {
+	vals := make([]interface{}, len(values))
+	for i, v := range values {
+		vals[i] = v
+	}
+
+	st.results = vals
 }
 
 func (ti *tableInfo) FieldPts() ([]interface{}, error) {
@@ -312,50 +336,38 @@ func newSelectOption(optionFncs ...NewSelectOption) []SelectOption {
 	return options
 }
 
-func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
+func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewSelectOption) (*SelectResult, error) {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
 	selectOptions := newSelectOption(options...)
-	whereClause, _ := buildWhereClause(selectOptions)
+	whereClause, whereParams := buildWhereClause(selectOptions)
 	q = q + whereClause
 
-	v := reflect.Indirect(reflect.ValueOf(dst))
-	t := v.Type()
-	kind := v.Kind()
 
-	if kind == reflect.Slice {
-		st := reflect.SliceOf(t)
-		fmt.Println(st.String())
-	}
-
-	/*
 	stmt, e := b.db.PrepareContext(ctx, q)
 	if e != nil {
-		return e
+		return nil, e
 	}
 
 	rows, e := stmt.QueryContext(ctx, whereParams...)
 	if e != nil {
-		return e
+		return nil, e
 	}
 
 	defer rows.Close()
 
 	pts, e := tableInfo.FieldPts()
 	if e != nil {
-		return e
+		return nil, e
 	}
-
-
 
 	for rows.Next() {
 		if e = rows.Scan(pts...); e != nil {
-			return e
+			return nil, e
 		}
 	}
-	*/
 
-	return nil
+	return nil, nil
 }
 
 func Where(conditions string, args ...interface{}) NewSelectOption {
