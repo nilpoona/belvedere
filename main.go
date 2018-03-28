@@ -102,6 +102,10 @@ func (st *SelectResult) Result() interface{} {
 	}
 }
 
+func (st *SelectResult) Append(value interface{}) {
+	st.results = append(st.results, value)
+}
+
 func (st *SelectResult) Set(values ...interface{}) {
 	vals := make([]interface{}, len(values))
 	for i, v := range values {
@@ -343,7 +347,6 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 	whereClause, whereParams := buildWhereClause(selectOptions)
 	q = q + whereClause
 
-
 	stmt, e := b.db.PrepareContext(ctx, q)
 	if e != nil {
 		return nil, e
@@ -360,6 +363,8 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 	if e != nil {
 		return nil, e
 	}
+
+	sr := &SelectResult{}
 
 	for rows.Next() {
 		if e = rows.Scan(pts...); e != nil {
