@@ -359,17 +359,18 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 
 	defer rows.Close()
 
-	pts, e := tableInfo.FieldPts()
-	if e != nil {
-		return nil, e
-	}
-
-	sr := &SelectResult{}
-
+	//sr := &SelectResult{}
 	for rows.Next() {
+		pts, e := tableInfo.FieldPts()
+		if e != nil {
+			return nil, e
+		}
+
 		if e = rows.Scan(pts...); e != nil {
 			return nil, e
 		}
+
+		fmt.Println(pts)
 	}
 
 	return nil, nil

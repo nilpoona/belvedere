@@ -122,7 +122,7 @@ func TestTableInfo_ColumnNames(t *testing.T) {
 
 func TestBelvedere_Select(t *testing.T) {
 	ctx, _ := context.WithCancel(context.Background())
-	b, e := NewBelvedere("mysql", "root:@/test")
+	b, e := NewBelvedere("mysql", "root:@/test?parseTime=true")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -132,8 +132,7 @@ func TestBelvedere_Select(t *testing.T) {
 		t.Fail()
 	}
 
-	var dst []*User
-
+	dst := User{}
 	_, e = b.Select(ctx, &dst, Where("id = ?", 1))
 }
 
