@@ -9,7 +9,7 @@ import (
 
 type (
 	User struct {
-		ID        uint32 `pk:"true"`
+		ID        uint64 `pk:"true"`
 		Name      string
 		Profile   string
 		CreatedAt time.Time
@@ -37,7 +37,7 @@ func TestTableInfo_Values(t *testing.T) {
 		{
 			name: "get user table values",
 			in: User{
-				ID:        uint32(2),
+				ID:        uint64(2),
 				Name:      "foobar",
 				Profile:   "profile",
 				CreatedAt: mockNow,
@@ -56,7 +56,7 @@ func TestTableInfo_Values(t *testing.T) {
 		{
 			name: "get user table values",
 			in: User{
-				ID:        uint32(2),
+				ID:        uint64(2),
 				Name:      "foobar",
 				Profile:   "profile",
 				CreatedAt: mockNow,
@@ -120,7 +120,7 @@ func TestTableInfo_ColumnNames(t *testing.T) {
 	}
 }
 
-func TestBelvedere_Select(t *testing.T) {
+func TestBelvedere_SelectOne(t *testing.T) {
 	ctx, _ := context.WithCancel(context.Background())
 	b, e := NewBelvedere("mysql", "root:@/test?parseTime=true")
 	if e != nil {
@@ -132,8 +132,9 @@ func TestBelvedere_Select(t *testing.T) {
 		t.Fail()
 	}
 
-	dst := User{}
-	_, e = b.Select(ctx, &dst, Where("id = ?", 1))
+	dst := &User{}
+	_, e = b.SelectOne(ctx, dst, Where("id = ?", 1))
+	t.Log(dst);
 }
 
 func TestBelvedere_Insert(t *testing.T) {

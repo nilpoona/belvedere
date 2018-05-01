@@ -17,7 +17,7 @@ import (
 type (
 	QueryBuilder interface {
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
-		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) (*SelectResult, error)
+		SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) (interface{}, error)
 	}
 
 	SelectOptionType string
@@ -35,10 +35,6 @@ type (
 	// Belvedere query builder struct
 	Belvedere struct {
 		db *sql.DB
-	}
-
-	SelectResult struct {
-		results []interface{}
 	}
 
 	tableInfo struct {
@@ -89,30 +85,6 @@ func (p pk) SameName(name string) bool {
 
 func (p pk) SameIndex(index int) bool {
 	return index == p.Index
-}
-
-func (st *SelectResult) Result() interface{} {
-	length := len(st.results)
-	if length == 0 {
-		return nil
-	} else if length == 1 {
-		return st.results[0]
-	} else {
-		return st.results
-	}
-}
-
-func (st *SelectResult) Append(value interface{}) {
-	st.results = append(st.results, value)
-}
-
-func (st *SelectResult) Set(values ...interface{}) {
-	vals := make([]interface{}, len(values))
-	for i, v := range values {
-		vals[i] = v
-	}
-
-	st.results = vals
 }
 
 func (ti *tableInfo) FieldPts() ([]interface{}, error) {
@@ -217,6 +189,18 @@ func (ti *tableInfo) StatementString(excludePk bool) string {
 	}
 
 	return string(buf)
+}
+
+func (ti *tableInfo) SetValue(values []interface{}) {
+	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
+		f := ti.ColumnInfo.Field(i)
+		fv := ti.ColumnValue.Field(i)
+		v := values[i]
+		rv := reflect.ValueOf(v).Elem()
+		if !f.Anonymous {
+			fv.Set(rv)
+		}
+	}
 }
 
 // ColumnNames Retrieve comma-separated column names.
@@ -340,7 +324,7 @@ func newSelectOption(optionFncs ...NewSelectOption) []SelectOption {
 	return options
 }
 
-func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewSelectOption) (*SelectResult, error) {
+func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) (interface{}, error) {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
 	selectOptions := newSelectOption(options...)
@@ -359,7 +343,6 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 
 	defer rows.Close()
 
-	//sr := &SelectResult{}
 	for rows.Next() {
 		pts, e := tableInfo.FieldPts()
 		if e != nil {
@@ -370,10 +353,10 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 			return nil, e
 		}
 
-		fmt.Println(pts)
+		tableInfo.SetValue(pts)
 	}
 
-	return nil, nil
+	return dst, nil
 }
 
 func Where(conditions string, args ...interface{}) NewSelectOption {
