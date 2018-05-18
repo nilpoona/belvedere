@@ -17,8 +17,11 @@ import (
 type (
 	QueryBuilder interface {
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
-		SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) (interface{}, error)
+		SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error
+		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error
 	}
+
+	Foo struct{}
 
 	SelectOptionType string
 
@@ -86,11 +89,10 @@ func (p pk) SameName(name string) bool {
 func (p pk) SameIndex(index int) bool {
 	return index == p.Index
 }
-
-func (ti *tableInfo) FieldPts() ([]interface{}, error) {
+func fieldPts(t reflect.Type, v reflect.Value) ([]interface{}, error) {
 	var pts []interface{}
-	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
-		f := ti.ColumnValue.Field(i)
+	for i := 0; i < t.NumField(); i++ {
+		f := v.Field(i)
 		// TODO: JSON Type
 		if f.IsValid() {
 			switch f.Kind() {
@@ -127,6 +129,10 @@ func (ti *tableInfo) FieldPts() ([]interface{}, error) {
 	}
 
 	return pts, nil
+}
+
+func (ti *tableInfo) FieldPts() ([]interface{}, error) {
+	return fieldPts(ti.ColumnInfo, ti.ColumnValue)
 }
 
 func (ti *tableInfo) Values(excludePk bool) ([]interface{}, error) {
@@ -324,7 +330,7 @@ func newSelectOption(optionFncs ...NewSelectOption) []SelectOption {
 	return options
 }
 
-func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) (interface{}, error) {
+func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
 	selectOptions := newSelectOption(options...)
@@ -333,12 +339,12 @@ func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...N
 
 	stmt, e := b.db.PrepareContext(ctx, q)
 	if e != nil {
-		return nil, e
+		return e
 	}
 
 	rows, e := stmt.QueryContext(ctx, whereParams...)
 	if e != nil {
-		return nil, e
+		return e
 	}
 
 	defer rows.Close()
@@ -346,17 +352,134 @@ func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...N
 	for rows.Next() {
 		pts, e := tableInfo.FieldPts()
 		if e != nil {
-			return nil, e
+			return e
 		}
 
 		if e = rows.Scan(pts...); e != nil {
-			return nil, e
+			return e
 		}
 
 		tableInfo.SetValue(pts)
 	}
 
-	return dst, nil
+	return nil
+}
+
+func toSliceType(i interface{}) (reflect.Type, error) {
+	t := reflect.TypeOf(i)
+	if t.Kind() != reflect.Ptr {
+		if t.Kind() == reflect.Slice {
+			return nil, fmt.Errorf("belvedere: cannot SELECT into a non-pointer slice: %v", t)
+		}
+		return nil, nil
+	}
+	if t = t.Elem(); t.Kind() != reflect.Slice {
+		return nil, nil
+	}
+	return t.Elem(), nil
+}
+
+func columnToFieldIndex(t reflect.Type, cols []string) ([][]int, error) {
+	colToFieldIndex := make([][]int, len(cols))
+
+	missingColNames := []string{}
+	for x := range cols {
+		colName := strings.ToLower(cols[x])
+		field, found := t.FieldByNameFunc(func(fieldName string) bool {
+			return colName == camelToSnake(fieldName)
+		})
+
+		if found {
+			colToFieldIndex[x] = field.Index
+		}
+		if colToFieldIndex[x] == nil {
+			missingColNames = append(missingColNames, colName)
+		}
+	}
+
+	if len(missingColNames) > 0 {
+		return colToFieldIndex, errors.New("missing column")
+	}
+
+	return colToFieldIndex, nil
+}
+
+func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
+	t, err := toSliceType(dst)
+
+	if err != nil {
+		return err
+	}
+
+	isPtr := t.Kind() == reflect.Ptr
+	if isPtr {
+		t = t.Elem()
+	}
+
+	tn := getTableNameFromTypeName(t)
+	q := fmt.Sprintf("SELECT * FROM %s", tn)
+	selectOptions := newSelectOption(options...)
+	whereClause, whereParams := buildWhereClause(selectOptions)
+
+	q = q + whereClause
+	stmt, e := b.db.PrepareContext(ctx, q)
+	if e != nil {
+		return e
+	}
+
+	rows, e := stmt.QueryContext(ctx, whereParams...)
+	if e != nil {
+		return e
+	}
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var colToFieldIndex [][]int
+	colToFieldIndex, err = columnToFieldIndex(t, cols)
+	if err != nil {
+		return err
+	}
+
+	sliceValue := reflect.Indirect(reflect.ValueOf(dst))
+
+	for rows.Next() {
+		if rows.Err() != nil {
+			return rows.Err()
+		}
+
+		v := reflect.New(t)
+
+		dest := make([]interface{}, len(cols))
+		for x := range cols {
+			f := v.Elem()
+
+			index := colToFieldIndex[x]
+			f = f.FieldByIndex(index)
+			target := f.Addr().Interface()
+
+			dest[x] = target
+		}
+
+		err = rows.Scan(dest...)
+		if err != nil {
+			return err
+		}
+
+		if !isPtr {
+			v = v.Elem()
+		}
+		sliceValue.Set(reflect.Append(sliceValue, v))
+	}
+
+	if sliceValue.IsNil() {
+		sliceValue.Set(reflect.MakeSlice(sliceValue.Type(), 0, 0))
+	}
+
+	return nil
 }
 
 func Where(conditions string, args ...interface{}) NewSelectOption {

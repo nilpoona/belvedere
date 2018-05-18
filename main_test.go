@@ -133,8 +133,30 @@ func TestBelvedere_SelectOne(t *testing.T) {
 	}
 
 	dst := &User{}
-	_, e = b.SelectOne(ctx, dst, Where("id = ?", 1))
-	t.Log(dst);
+	e = b.SelectOne(ctx, dst, Where("id = ?", 1))
+	t.Log(dst)
+}
+
+func TestBelvedere_Select(t *testing.T) {
+	ctx, _ := context.WithCancel(context.Background())
+	b, e := NewBelvedere("mysql", "root:@/test?parseTime=true")
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	//mockNow := nowTime()
+	if e != nil {
+		t.Fail()
+	}
+
+	var users []*User
+	e = b.Select(ctx, &users, Where("id = ?", 1))
+	if e != nil {
+		t.Error(e)
+	}
+
+	t.Log(users[0].Name)
+
 }
 
 func TestBelvedere_Insert(t *testing.T) {
