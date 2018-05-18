@@ -9,7 +9,7 @@ import (
 
 type (
 	User struct {
-		ID        uint32 `pk:"true"`
+		ID        uint64 `pk:"true"`
 		Name      string
 		Profile   string
 		CreatedAt time.Time
@@ -37,7 +37,7 @@ func TestTableInfo_Values(t *testing.T) {
 		{
 			name: "get user table values",
 			in: User{
-				ID:        uint32(2),
+				ID:        uint64(2),
 				Name:      "foobar",
 				Profile:   "profile",
 				CreatedAt: mockNow,
@@ -56,7 +56,7 @@ func TestTableInfo_Values(t *testing.T) {
 		{
 			name: "get user table values",
 			in: User{
-				ID:        uint32(2),
+				ID:        uint64(2),
 				Name:      "foobar",
 				Profile:   "profile",
 				CreatedAt: mockNow,
@@ -118,6 +118,45 @@ func TestTableInfo_ColumnNames(t *testing.T) {
 			t.Errorf("The column names is not the value you expected expected: %s current value: %s", d.want, cnames)
 		}
 	}
+}
+
+func TestBelvedere_SelectOne(t *testing.T) {
+	ctx, _ := context.WithCancel(context.Background())
+	b, e := NewBelvedere("mysql", "root:@/test?parseTime=true")
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	//mockNow := nowTime()
+	if e != nil {
+		t.Fail()
+	}
+
+	dst := &User{}
+	e = b.SelectOne(ctx, dst, Where("id = ?", 1))
+	t.Log(dst)
+}
+
+func TestBelvedere_Select(t *testing.T) {
+	ctx, _ := context.WithCancel(context.Background())
+	b, e := NewBelvedere("mysql", "root:@/test?parseTime=true")
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	//mockNow := nowTime()
+	if e != nil {
+		t.Fail()
+	}
+
+	var users []*User
+	e = b.Select(ctx, &users, Where("id = ?", 1))
+	if e != nil {
+		t.Error(e)
+	}
+
+	t.Log(users[0].Name)
+
 }
 
 func TestBelvedere_Insert(t *testing.T) {

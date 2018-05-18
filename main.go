@@ -14,21 +14,26 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-var repGetTableName = regexp.MustCompile(`^.+\.([^.]*?)$`)
-var repUppercaseLetter = regexp.MustCompile(`([^A-Z])([A-Z])`)
-
 type (
 	QueryBuilder interface {
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
-		Select(ctx context.Context, dst interface{}, options ...CreateSelectOptionFnc) error
+		SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error
+		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error
 	}
+
+	Foo struct{}
+
+	SelectOptionType string
 
 	SelectOption interface {
 		Conditions() string
 		Params() []interface{}
+		Type() SelectOptionType
 	}
 
-	CreateSelectOptionFnc func(conditions string, args ...interface{}) SelectOption
+	NewSelectOption func() SelectOption
+
+	CreateSelectOptionFnc func(conditions string, args ...interface{}) NewSelectOption
 
 	// Belvedere query builder struct
 	Belvedere struct {
@@ -53,12 +58,28 @@ type (
 	}
 )
 
+var selectOptionTypeWhere = SelectOptionType("where")
+var repGetTableName = regexp.MustCompile(`^.+\.([^.]*?)$`)
+var repUppercaseLetter = regexp.MustCompile(`([^A-Z])([A-Z])`)
+
+func (st SelectOptionType) Equal(t SelectOptionType) bool {
+	return t.String() == st.String()
+}
+
+func (st SelectOptionType) String() string {
+	return string(st)
+}
+
 func (w *where) Conditions() string {
 	return w.conditions
 }
 
 func (w *where) Params() []interface{} {
 	return w.args
+}
+
+func (w *where) Type() SelectOptionType {
+	return selectOptionTypeWhere
 }
 
 func (p pk) SameName(name string) bool {
@@ -68,6 +89,51 @@ func (p pk) SameName(name string) bool {
 func (p pk) SameIndex(index int) bool {
 	return index == p.Index
 }
+func fieldPts(t reflect.Type, v reflect.Value) ([]interface{}, error) {
+	var pts []interface{}
+	for i := 0; i < t.NumField(); i++ {
+		f := v.Field(i)
+		// TODO: JSON Type
+		if f.IsValid() {
+			switch f.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				value := f.Int()
+				pts = append(pts, &value)
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+				value := f.Uint()
+				pts = append(pts, &value)
+			case reflect.Float32, reflect.Float64:
+				value := f.Float()
+				pts = append(pts, &value)
+			case reflect.String:
+				value := f.String()
+				pts = append(pts, &value)
+			case reflect.Bool:
+				var value int
+				pts = append(pts, &value)
+			case reflect.Struct:
+				i := f.Interface()
+				if f.Type().String() == "time.Time" {
+					if value, ok := i.(time.Time); ok {
+						pts = append(pts, &value)
+					} else {
+						return nil, errors.New("cannot convert this type")
+					}
+				} else {
+					return nil, errors.New("cannot convert this type")
+				}
+			default:
+				fmt.Println(f.Kind())
+			}
+		}
+	}
+
+	return pts, nil
+}
+
+func (ti *tableInfo) FieldPts() ([]interface{}, error) {
+	return fieldPts(ti.ColumnInfo, ti.ColumnValue)
+}
 
 func (ti *tableInfo) Values(excludePk bool) ([]interface{}, error) {
 	var values []interface{}
@@ -76,6 +142,7 @@ func (ti *tableInfo) Values(excludePk bool) ([]interface{}, error) {
 		if excludePk && ti.Pk.SameIndex(i) {
 			continue
 		}
+		// TODO: JSON Type
 		if f.IsValid() {
 			switch f.Kind() {
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -128,6 +195,18 @@ func (ti *tableInfo) StatementString(excludePk bool) string {
 	}
 
 	return string(buf)
+}
+
+func (ti *tableInfo) SetValue(values []interface{}) {
+	for i := 0; i < ti.ColumnInfo.NumField(); i++ {
+		f := ti.ColumnInfo.Field(i)
+		fv := ti.ColumnValue.Field(i)
+		v := values[i]
+		rv := reflect.ValueOf(v).Elem()
+		if !f.Anonymous {
+			fv.Set(rv)
+		}
+	}
 }
 
 // ColumnNames Retrieve comma-separated column names.
@@ -225,15 +304,190 @@ func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, er
 	return result, nil
 }
 
-func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...CreateSelectOptionFnc) error {
-	// tableInfo := newTableInfo(dst)
+func buildWhereClause(selectOptions []SelectOption) (string, []interface{}) {
+	var buf bytes.Buffer
+	var values []interface{}
+	buf.WriteString(" WHERE ")
+	for _, option := range selectOptions {
+		t := option.Type()
+		if t.Equal(selectOptionTypeWhere) {
+			buf.WriteString(option.Conditions())
+			for _, v := range option.Params() {
+				values = append(values, v)
+			}
+		}
+	}
+	return buf.String(), values
+}
+
+func newSelectOption(optionFncs ...NewSelectOption) []SelectOption {
+	options := make([]SelectOption, len(optionFncs))
+	for i, optionFnc := range optionFncs {
+		option := optionFnc()
+		options[i] = option
+	}
+
+	return options
+}
+
+func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
+	tableInfo := newTableInfo(dst)
+	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
+	selectOptions := newSelectOption(options...)
+	whereClause, whereParams := buildWhereClause(selectOptions)
+	q = q + whereClause
+
+	stmt, e := b.db.PrepareContext(ctx, q)
+	if e != nil {
+		return e
+	}
+
+	rows, e := stmt.QueryContext(ctx, whereParams...)
+	if e != nil {
+		return e
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		pts, e := tableInfo.FieldPts()
+		if e != nil {
+			return e
+		}
+
+		if e = rows.Scan(pts...); e != nil {
+			return e
+		}
+
+		tableInfo.SetValue(pts)
+	}
+
 	return nil
 }
 
-func Where(conditions string, args ...interface{}) SelectOption {
-	return &where{
-		conditions: conditions,
-		args:       args,
+func toSliceType(i interface{}) (reflect.Type, error) {
+	t := reflect.TypeOf(i)
+	if t.Kind() != reflect.Ptr {
+		if t.Kind() == reflect.Slice {
+			return nil, fmt.Errorf("belvedere: cannot SELECT into a non-pointer slice: %v", t)
+		}
+		return nil, nil
+	}
+	if t = t.Elem(); t.Kind() != reflect.Slice {
+		return nil, nil
+	}
+	return t.Elem(), nil
+}
+
+func columnToFieldIndex(t reflect.Type, cols []string) ([][]int, error) {
+	colToFieldIndex := make([][]int, len(cols))
+
+	missingColNames := []string{}
+	for x := range cols {
+		colName := strings.ToLower(cols[x])
+		field, found := t.FieldByNameFunc(func(fieldName string) bool {
+			return colName == camelToSnake(fieldName)
+		})
+
+		if found {
+			colToFieldIndex[x] = field.Index
+		}
+		if colToFieldIndex[x] == nil {
+			missingColNames = append(missingColNames, colName)
+		}
+	}
+
+	if len(missingColNames) > 0 {
+		return colToFieldIndex, errors.New("missing column")
+	}
+
+	return colToFieldIndex, nil
+}
+
+func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
+	t, err := toSliceType(dst)
+
+	if err != nil {
+		return err
+	}
+
+	isPtr := t.Kind() == reflect.Ptr
+	if isPtr {
+		t = t.Elem()
+	}
+
+	tn := getTableNameFromTypeName(t)
+	q := fmt.Sprintf("SELECT * FROM %s", tn)
+	selectOptions := newSelectOption(options...)
+	whereClause, whereParams := buildWhereClause(selectOptions)
+
+	q = q + whereClause
+	stmt, e := b.db.PrepareContext(ctx, q)
+	if e != nil {
+		return e
+	}
+
+	rows, e := stmt.QueryContext(ctx, whereParams...)
+	if e != nil {
+		return e
+	}
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var colToFieldIndex [][]int
+	colToFieldIndex, err = columnToFieldIndex(t, cols)
+	if err != nil {
+		return err
+	}
+
+	sliceValue := reflect.Indirect(reflect.ValueOf(dst))
+
+	for rows.Next() {
+		if rows.Err() != nil {
+			return rows.Err()
+		}
+
+		v := reflect.New(t)
+
+		dest := make([]interface{}, len(cols))
+		for x := range cols {
+			f := v.Elem()
+
+			index := colToFieldIndex[x]
+			f = f.FieldByIndex(index)
+			target := f.Addr().Interface()
+
+			dest[x] = target
+		}
+
+		err = rows.Scan(dest...)
+		if err != nil {
+			return err
+		}
+
+		if !isPtr {
+			v = v.Elem()
+		}
+		sliceValue.Set(reflect.Append(sliceValue, v))
+	}
+
+	if sliceValue.IsNil() {
+		sliceValue.Set(reflect.MakeSlice(sliceValue.Type(), 0, 0))
+	}
+
+	return nil
+}
+
+func Where(conditions string, args ...interface{}) NewSelectOption {
+	return func() SelectOption {
+		return &where{
+			conditions: conditions,
+			args:       args,
+		}
 	}
 }
 
