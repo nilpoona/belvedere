@@ -17,7 +17,15 @@ type (
 		conditions string
 		args       []interface{}
 	}
+
+	limit struct {
+		conditions string
+		args       []interface{}
+	}
 )
+
+var selectOptionTypeWhere = SelectOptionType("where")
+var selectOptionTypeLimit = SelectOptionType("limit")
 
 func (st SelectOptionType) Equal(t SelectOptionType) bool {
 	return t.String() == st.String()
@@ -39,7 +47,22 @@ func (w *where) Type() SelectOptionType {
 	return selectOptionTypeWhere
 }
 
+func (l *limit) Conditions() string {
+	return l.conditions
+}
+
+func (l *limit) Params() []interface{} {
+	return l.args
+}
+
+func (l *limit) Type() SelectOptionType {
+	return selectOptionTypeLimit
+}
+
 func buildWhereClause(selectOptions []SelectOption) (string, []interface{}) {
+	if len(selectOptions) == 0 {
+		return "", nil
+	}
 	var buf bytes.Buffer
 	var values []interface{}
 	buf.WriteString(" WHERE ")
@@ -73,3 +96,16 @@ func Where(conditions string, args ...interface{}) NewSelectOption {
 		}
 	}
 }
+
+/*
+func Limit(limit int) NewSelectOption {
+	return func() SelectOption {
+		return &limit{
+			conditions: "LIMIT ?",
+			args: []interface{}{
+				limit,
+			},
+		}
+	}
+}
+*/

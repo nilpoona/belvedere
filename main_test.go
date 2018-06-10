@@ -161,6 +161,26 @@ func TestBelvedere_Select(t *testing.T) {
 
 }
 
+func TestBelvedere_Count(t *testing.T) {
+	ctx, _ := context.WithCancel(context.Background())
+	b, e := NewBelvedere("mysql", "root:@/test?parseTime=true")
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	if e != nil {
+		t.Fail()
+	}
+
+	// cnt, e := b.Count(ctx, "id", &User{}, Where("id > ?", 1))
+	cnt, e := b.Count(ctx, "id", &User{})
+	if e != nil {
+		t.Error(e)
+	}
+
+	t.Log(cnt)
+}
+
 func TestBelvedere_Insert(t *testing.T) {
 	mockNow := nowTime()
 	data := []struct {

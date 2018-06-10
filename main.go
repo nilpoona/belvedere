@@ -17,6 +17,7 @@ type (
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
 		SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error
 		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error
+		Count(ctx context.Context, fn string, dst interface{}, options ...NewSelectOption) (int, error)
 	}
 
 	// Belvedere query builder struct
@@ -25,7 +26,6 @@ type (
 	}
 )
 
-var selectOptionTypeWhere = SelectOptionType("where")
 var repGetTableName = regexp.MustCompile(`^.+\.([^.]*?)$`)
 var repUppercaseLetter = regexp.MustCompile(`([^A-Z])([A-Z])`)
 
@@ -217,6 +217,35 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 	}
 
 	return nil
+}
+
+func (b *Belvedere) Count(ctx context.Context, fn string, dst interface{}, options ...NewSelectOption) (int, error) {
+	tableInfo := newTableInfo(dst)
+	q := fmt.Sprintf("SELECT COUNT(%s) AS `cnt` FROM %s", fn, tableInfo.Name)
+	selectOptions := newSelectOption(options...)
+	whereClause, whereParams := buildWhereClause(selectOptions)
+	q = q + whereClause
+
+	stmt, e := b.db.PrepareContext(ctx, q)
+	if e != nil {
+		return 0, e
+	}
+
+	rows, e := stmt.QueryContext(ctx, whereParams...)
+	if e != nil {
+		return 0, e
+	}
+
+	defer rows.Close()
+
+	var cnt int
+	for rows.Next() {
+		if e = rows.Scan(&cnt); e != nil {
+			return 0, e
+		}
+	}
+
+	return cnt, nil
 }
 
 func NewBelvedere(driver, dataSorceName string) (QueryBuilder, error) {
