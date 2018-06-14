@@ -71,7 +71,10 @@ func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...N
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
 	selectOptions := newSelectOption(options...)
-	whereClause, whereParams := buildWhereClause(selectOptions)
+	whereClause, whereParams, err := buildWhereClause(selectOptions)
+	if err != nil {
+		return err
+	}
 	q = q + whereClause
 
 	stmt, e := b.db.PrepareContext(ctx, q)
@@ -156,17 +159,28 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 	tn := getTableNameFromTypeName(t)
 	q := fmt.Sprintf("SELECT * FROM %s", tn)
 	selectOptions := newSelectOption(options...)
-	whereClause, whereParams := buildWhereClause(selectOptions)
-
-	q = q + whereClause
-	stmt, e := b.db.PrepareContext(ctx, q)
-	if e != nil {
-		return e
+	whereClause, whereParams, err := buildWhereClause(selectOptions)
+	if err != nil {
+		return err
 	}
 
-	rows, e := stmt.QueryContext(ctx, whereParams...)
-	if e != nil {
-		return e
+	var rows *sql.Rows
+	if len(whereClause) > 0 {
+		q = q + whereClause
+		stmt, err := b.db.PrepareContext(ctx, q)
+		if err != nil {
+			return err
+		}
+
+		rows, err = stmt.QueryContext(ctx, whereParams...)
+		if err != nil {
+			return err
+		}
+	} else {
+		rows, err = b.db.QueryContext(ctx, q)
+		if err != nil {
+			return err
+		}
 	}
 
 	cols, err := rows.Columns()
@@ -223,7 +237,11 @@ func (b *Belvedere) Count(ctx context.Context, fn string, dst interface{}, optio
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT COUNT(%s) AS `cnt` FROM %s", fn, tableInfo.Name)
 	selectOptions := newSelectOption(options...)
-	whereClause, whereParams := buildWhereClause(selectOptions)
+	whereClause, whereParams, err := buildWhereClause(selectOptions)
+	if err != nil {
+		return 0, err
+	}
+
 	q = q + whereClause
 
 	stmt, e := b.db.PrepareContext(ctx, q)
