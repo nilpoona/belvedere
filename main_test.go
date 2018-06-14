@@ -150,7 +150,7 @@ func TestBelvedere_Select(t *testing.T) {
 	}
 
 	var users []*User
-	e = b.Select(ctx, &users, Where("id > ?", 0))
+	e = b.Select(ctx, &users, IN("id", 1, 2))
 	if e != nil {
 		t.Error(e)
 	}

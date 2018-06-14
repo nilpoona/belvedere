@@ -35,7 +35,6 @@ type (
 
 var selectOptionTypeWhere = SelectOptionType("where")
 var selectOptionTypeLimit = SelectOptionType("limit")
-var selectOptionTypeWhereIn = SelectOptionType("whereIn")
 
 func (st SelectOptionType) Equal(t SelectOptionType) bool {
 	return t.String() == st.String()
@@ -87,7 +86,7 @@ func (wi *whereIn) Params() []interface{} {
 }
 
 func (wi *whereIn) Type() SelectOptionType {
-	return selectOptionTypeWhereIn
+	return selectOptionTypeWhere
 }
 
 func buildWhereClause(selectOptions []SelectOption) (string, []interface{}, error) {
