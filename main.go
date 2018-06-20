@@ -70,8 +70,8 @@ func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, er
 func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
-	selectOptions := newSelectOption(options...)
-	whereClause, whereParams, err := buildWhereClause(selectOptions)
+	wheres, _ := newSelectOption(options...)
+	whereClause, whereParams, err := buildWhereClause(wheres)
 	if err != nil {
 		return err
 	}
@@ -158,21 +158,29 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 
 	tn := getTableNameFromTypeName(t)
 	q := fmt.Sprintf("SELECT * FROM %s", tn)
-	selectOptions := newSelectOption(options...)
-	whereClause, whereParams, err := buildWhereClause(selectOptions)
+	wheres, limit := newSelectOption(options...)
+	whereClause, whereParams, err := buildWhereClause(wheres)
 	if err != nil {
 		return err
 	}
 
+	limitClause, limitParams, err := buildLimitClause(limit)
+	if err != nil {
+		return err
+	}
+
+	q = q + whereClause + limitClause
+	params := append(whereParams, limitParams...)
+	fmt.Println(q)
+
 	var rows *sql.Rows
-	if len(whereClause) > 0 {
-		q = q + whereClause
+	if len(params) > 0 {
 		stmt, err := b.db.PrepareContext(ctx, q)
 		if err != nil {
 			return err
 		}
 
-		rows, err = stmt.QueryContext(ctx, whereParams...)
+		rows, err = stmt.QueryContext(ctx, params...)
 		if err != nil {
 			return err
 		}
@@ -236,8 +244,8 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 func (b *Belvedere) Count(ctx context.Context, fn string, dst interface{}, options ...NewSelectOption) (int, error) {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT COUNT(%s) AS `cnt` FROM %s", fn, tableInfo.Name)
-	selectOptions := newSelectOption(options...)
-	whereClause, whereParams, err := buildWhereClause(selectOptions)
+	wheres, _ := newSelectOption(options...)
+	whereClause, whereParams, err := buildWhereClause(wheres)
 	if err != nil {
 		return 0, err
 	}

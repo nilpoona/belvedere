@@ -2,6 +2,7 @@ package belvedere
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -57,8 +58,8 @@ func (w *where) Type() SelectOptionType {
 	return selectOptionTypeWhere
 }
 
-func (l *limit) Conditions() string {
-	return l.conditions
+func (l *limit) Conditions() (string, error) {
+	return l.conditions, nil
 }
 
 func (l *limit) Params() []interface{} {
@@ -92,13 +93,17 @@ func (wi *whereIn) Type() SelectOptionType {
 func buildWhereClause(selectOptions []SelectOption) (string, []interface{}, error) {
 	var buf bytes.Buffer
 	var values []interface{}
+	if len(selectOptions) == 0 {
+		return "", values, nil
+	}
+
 	buf.WriteString(" WHERE ")
 	for _, option := range selectOptions {
 		t := option.Type()
 		if t.Equal(selectOptionTypeWhere) {
 			condition, err := option.Conditions()
 			if err != nil {
-				return "", nil, err
+				return "", values, err
 			}
 			buf.WriteString(condition)
 			for _, v := range option.Params() {
@@ -109,14 +114,37 @@ func buildWhereClause(selectOptions []SelectOption) (string, []interface{}, erro
 	return buf.String(), values, nil
 }
 
-func newSelectOption(optionFncs ...NewSelectOption) []SelectOption {
-	options := make([]SelectOption, len(optionFncs))
-	for i, optionFnc := range optionFncs {
-		option := optionFnc()
-		options[i] = option
+func buildLimitClause(o SelectOption) (string, []interface{}, error) {
+	if o == nil {
+		return "", []interface{}{}, nil
 	}
 
-	return options
+	if o.Type() != selectOptionTypeLimit {
+		return "", []interface{}{}, errors.New("It is not a type limit")
+	}
+
+	conditions, err := o.Conditions()
+	if err != nil {
+		return "", []interface{}{}, err
+	}
+
+	params := o.Params()
+	p := params[0]
+	return conditions, []interface{}{p}, nil
+}
+
+func newSelectOption(optionFncs ...NewSelectOption) (wheres []SelectOption, limit SelectOption) {
+	for _, optionFnc := range optionFncs {
+		option := optionFnc()
+		t := option.Type()
+		if t == selectOptionTypeWhere {
+			wheres = append(wheres, option)
+		} else if t == selectOptionTypeLimit {
+			limit = option
+		}
+	}
+
+	return wheres, limit
 }
 
 func Where(conditions string, args ...interface{}) NewSelectOption {
@@ -128,18 +156,16 @@ func Where(conditions string, args ...interface{}) NewSelectOption {
 	}
 }
 
-/*
-func Limit(limit int) NewSelectOption {
+func Limit(p int) NewSelectOption {
 	return func() SelectOption {
 		return &limit{
-			conditions: "LIMIT ?",
+			conditions: " LIMIT ?",
 			args: []interface{}{
-				limit,
+				p,
 			},
 		}
 	}
 }
-*/
 
 func IN(conditions string, args ...interface{}) NewSelectOption {
 	return func() SelectOption {
