@@ -176,7 +176,6 @@ func TestBelvedere_Count(t *testing.T) {
 		t.Fail()
 	}
 
-	// cnt, e := b.Count(ctx, "id", &User{}, Where("id > ?", 1))
 	cnt, e := b.Count(ctx, "id", &User{})
 	if e != nil {
 		t.Error(e)

@@ -70,7 +70,7 @@ func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, er
 func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
-	wheres, _ := newSelectOption(options...)
+	wheres, _, _ := newSelectOption(options...)
 	whereClause, whereParams, err := buildWhereClause(wheres)
 	if err != nil {
 		return err
@@ -158,7 +158,7 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 
 	tn := getTableNameFromTypeName(t)
 	q := fmt.Sprintf("SELECT * FROM %s", tn)
-	wheres, limit := newSelectOption(options...)
+	wheres, limit, order := newSelectOption(options...)
 	whereClause, whereParams, err := buildWhereClause(wheres)
 	if err != nil {
 		return err
@@ -169,7 +169,9 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 		return err
 	}
 
-	q = q + whereClause + limitClause
+	orderClause, _ := buildOrderClause(order)
+
+	q = q + whereClause + orderClause + limitClause
 	params := append(whereParams, limitParams...)
 	fmt.Println(q)
 
@@ -244,7 +246,7 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 func (b *Belvedere) Count(ctx context.Context, fn string, dst interface{}, options ...NewSelectOption) (int, error) {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT COUNT(%s) AS `cnt` FROM %s", fn, tableInfo.Name)
-	wheres, _ := newSelectOption(options...)
+	wheres, _, _ := newSelectOption(options...)
 	whereClause, whereParams, err := buildWhereClause(wheres)
 	if err != nil {
 		return 0, err

@@ -9,10 +9,11 @@ import (
 
 type (
 	SelectOptionType string
+	OrderType        int
 	SelectOption     interface {
 		Conditions() (string, error)
-		Params() []interface{}
 		Type() SelectOptionType
+		Params() []interface{}
 	}
 
 	NewSelectOption       func() SelectOption
@@ -32,10 +33,31 @@ type (
 		conditions string
 		args       []interface{}
 	}
+
+	order struct {
+		conditions string
+		oType      OrderType
+	}
 )
 
-var selectOptionTypeWhere = SelectOptionType("where")
-var selectOptionTypeLimit = SelectOptionType("limit")
+var (
+	selectOptionTypeWhere = SelectOptionType("where")
+	selectOptionTypeLimit = SelectOptionType("limit")
+	selectOptionTypeOrder = SelectOptionType("order")
+)
+
+const (
+	OrderTypeDesc = OrderType(iota)
+	OrderTypeAsc
+)
+
+func (o OrderType) String() string {
+	if o == OrderTypeDesc {
+		return "DESC"
+	} else {
+		return "ASC"
+	}
+}
 
 func (st SelectOptionType) Equal(t SelectOptionType) bool {
 	return t.String() == st.String()
@@ -90,6 +112,19 @@ func (wi *whereIn) Type() SelectOptionType {
 	return selectOptionTypeWhere
 }
 
+// order
+func (o *order) Conditions() (string, error) {
+	return fmt.Sprintf(" ORDER BY `%s` %s", o.conditions, o.oType.String()), nil
+}
+
+func (o *order) Params() []interface{} {
+	return []interface{}{}
+}
+
+func (o *order) Type() SelectOptionType {
+	return selectOptionTypeOrder
+}
+
 func buildWhereClause(selectOptions []SelectOption) (string, []interface{}, error) {
 	var buf bytes.Buffer
 	var values []interface{}
@@ -114,6 +149,14 @@ func buildWhereClause(selectOptions []SelectOption) (string, []interface{}, erro
 	return buf.String(), values, nil
 }
 
+func buildOrderClause(o SelectOption) (string, error) {
+	if o == nil {
+		return "", nil
+	}
+
+	return o.Conditions()
+}
+
 func buildLimitClause(o SelectOption) (string, []interface{}, error) {
 	if o == nil {
 		return "", []interface{}{}, nil
@@ -133,7 +176,7 @@ func buildLimitClause(o SelectOption) (string, []interface{}, error) {
 	return conditions, []interface{}{p}, nil
 }
 
-func newSelectOption(optionFncs ...NewSelectOption) (wheres []SelectOption, limit SelectOption) {
+func newSelectOption(optionFncs ...NewSelectOption) (wheres []SelectOption, limit SelectOption, order SelectOption) {
 	for _, optionFnc := range optionFncs {
 		option := optionFnc()
 		t := option.Type()
@@ -141,10 +184,12 @@ func newSelectOption(optionFncs ...NewSelectOption) (wheres []SelectOption, limi
 			wheres = append(wheres, option)
 		} else if t == selectOptionTypeLimit {
 			limit = option
+		} else if t == selectOptionTypeOrder {
+			order = option
 		}
 	}
 
-	return wheres, limit
+	return wheres, limit, order
 }
 
 func Where(conditions string, args ...interface{}) NewSelectOption {
@@ -172,6 +217,15 @@ func IN(conditions string, args ...interface{}) NewSelectOption {
 		return &whereIn{
 			conditions: conditions,
 			args:       args,
+		}
+	}
+}
+
+func Order(field string, oType OrderType) NewSelectOption {
+	return func() SelectOption {
+		return &order{
+			conditions: field,
+			oType:      oType,
 		}
 	}
 }
