@@ -153,7 +153,8 @@ func TestBelvedere_Select(t *testing.T) {
 	e = b.Select(
 		ctx,
 		&users,
-		Limit(1),
+		Offset(0),
+		Limit(2),
 	)
 	if e != nil {
 		t.Error(e)

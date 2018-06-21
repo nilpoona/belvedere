@@ -38,12 +38,17 @@ type (
 		conditions string
 		oType      OrderType
 	}
+
+	offset struct {
+		offset uint
+	}
 )
 
 var (
-	selectOptionTypeWhere = SelectOptionType("where")
-	selectOptionTypeLimit = SelectOptionType("limit")
-	selectOptionTypeOrder = SelectOptionType("order")
+	selectOptionTypeWhere  = SelectOptionType("where")
+	selectOptionTypeLimit  = SelectOptionType("limit")
+	selectOptionTypeOrder  = SelectOptionType("order")
+	selectOptionTypeOffset = SelectOptionType("offset")
 )
 
 const (
@@ -125,6 +130,21 @@ func (o *order) Type() SelectOptionType {
 	return selectOptionTypeOrder
 }
 
+// offset
+func (o *offset) Conditions() (string, error) {
+	return " OFFSET ?", nil
+}
+
+func (o *offset) Params() []interface{} {
+	return []interface{}{
+		o.offset,
+	}
+}
+
+func (o *offset) Type() SelectOptionType {
+	return selectOptionTypeOffset
+}
+
 func buildWhereClause(selectOptions []SelectOption) (string, []interface{}, error) {
 	var buf bytes.Buffer
 	var values []interface{}
@@ -157,6 +177,15 @@ func buildOrderClause(o SelectOption) (string, error) {
 	return o.Conditions()
 }
 
+func buildOffsetClause(o SelectOption) (string, []interface{}, error) {
+	if o == nil {
+		return "", []interface{}{}, nil
+	}
+
+	conditions, _ := o.Conditions()
+	return conditions, o.Params(), nil
+}
+
 func buildLimitClause(o SelectOption) (string, []interface{}, error) {
 	if o == nil {
 		return "", []interface{}{}, nil
@@ -176,7 +205,7 @@ func buildLimitClause(o SelectOption) (string, []interface{}, error) {
 	return conditions, []interface{}{p}, nil
 }
 
-func newSelectOption(optionFncs ...NewSelectOption) (wheres []SelectOption, limit SelectOption, order SelectOption) {
+func newSelectOption(optionFncs ...NewSelectOption) (wheres []SelectOption, limit, order, offset SelectOption) {
 	for _, optionFnc := range optionFncs {
 		option := optionFnc()
 		t := option.Type()
@@ -186,10 +215,12 @@ func newSelectOption(optionFncs ...NewSelectOption) (wheres []SelectOption, limi
 			limit = option
 		} else if t == selectOptionTypeOrder {
 			order = option
+		} else if t == selectOptionTypeOffset {
+			offset = option
 		}
 	}
 
-	return wheres, limit, order
+	return wheres, limit, order, offset
 }
 
 func Where(conditions string, args ...interface{}) NewSelectOption {
@@ -226,6 +257,14 @@ func Order(field string, oType OrderType) NewSelectOption {
 		return &order{
 			conditions: field,
 			oType:      oType,
+		}
+	}
+}
+
+func Offset(amount uint) NewSelectOption {
+	return func() SelectOption {
+		return &offset{
+			offset: amount,
 		}
 	}
 }
