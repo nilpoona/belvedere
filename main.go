@@ -70,8 +70,8 @@ func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, er
 func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
-	wheres, _, _, _ := newSelectOption(options...)
-	whereClause, whereParams, err := buildWhereClause(wheres)
+	som := newSelectOptionMap(options...)
+	whereClause, whereParams, err := buildWhereClause(som.Wheres())
 	if err != nil {
 		return err
 	}
@@ -158,19 +158,19 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 
 	tn := getTableNameFromTypeName(t)
 	q := fmt.Sprintf("SELECT * FROM %s", tn)
-	wheres, limit, order, offset := newSelectOption(options...)
-	whereClause, whereParams, err := buildWhereClause(wheres)
+	som := newSelectOptionMap(options...)
+	whereClause, whereParams, err := buildWhereClause(som.Wheres())
 	if err != nil {
 		return err
 	}
 
-	limitClause, limitParams, err := buildLimitClause(limit)
+	limitClause, limitParams, err := buildLimitClause(som.Limit())
 	if err != nil {
 		return err
 	}
 
-	orderClause, _ := buildOrderClause(order)
-	offsetClause, offsetParams, _ := buildOffsetClause(offset)
+	orderClause, _ := buildOrderClause(som.Order())
+	offsetClause, offsetParams, _ := buildOffsetClause(som.Offset())
 
 	q = q + whereClause + orderClause + limitClause + offsetClause
 
@@ -248,8 +248,8 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 func (b *Belvedere) Count(ctx context.Context, fn string, dst interface{}, options ...NewSelectOption) (int, error) {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT COUNT(%s) AS `cnt` FROM %s", fn, tableInfo.Name)
-	wheres, _, _, _ := newSelectOption(options...)
-	whereClause, whereParams, err := buildWhereClause(wheres)
+	som := newSelectOptionMap(options...)
+	whereClause, whereParams, err := buildWhereClause(som.Wheres())
 	if err != nil {
 		return 0, err
 	}

@@ -16,6 +16,8 @@ type (
 		Params() []interface{}
 	}
 
+	SelectOptionMap map[SelectOptionType][]SelectOption
+
 	NewSelectOption       func() SelectOption
 	CreateSelectOptionFnc func(conditions string, args ...interface{}) NewSelectOption
 
@@ -62,6 +64,38 @@ func (o OrderType) String() string {
 	} else {
 		return "ASC"
 	}
+}
+
+func (som SelectOptionMap) Limit() SelectOption {
+	if value, ok := som[selectOptionTypeLimit]; ok {
+		return value[0]
+	}
+
+	return nil
+}
+
+func (som SelectOptionMap) Offset() SelectOption {
+	if value, ok := som[selectOptionTypeOffset]; ok {
+		return value[0]
+	}
+
+	return nil
+}
+
+func (som SelectOptionMap) Wheres() []SelectOption {
+	if value, ok := som[selectOptionTypeWhere]; ok {
+		return value
+	}
+
+	return nil
+}
+
+func (som SelectOptionMap) Order() SelectOption {
+	if value, ok := som[selectOptionTypeOrder]; ok {
+		return value[0]
+	}
+
+	return nil
 }
 
 func (st SelectOptionType) Equal(t SelectOptionType) bool {
@@ -205,22 +239,26 @@ func buildLimitClause(o SelectOption) (string, []interface{}, error) {
 	return conditions, []interface{}{p}, nil
 }
 
-func newSelectOption(optionFncs ...NewSelectOption) (wheres []SelectOption, limit, order, offset SelectOption) {
+func newSelectOptionMap(optionFncs ...NewSelectOption) SelectOptionMap {
+	som := SelectOptionMap{}
 	for _, optionFnc := range optionFncs {
 		option := optionFnc()
 		t := option.Type()
+		var key SelectOptionType
 		if t == selectOptionTypeWhere {
-			wheres = append(wheres, option)
+			key = selectOptionTypeWhere
 		} else if t == selectOptionTypeLimit {
-			limit = option
+			key = selectOptionTypeLimit
 		} else if t == selectOptionTypeOrder {
-			order = option
+			key = selectOptionTypeOrder
 		} else if t == selectOptionTypeOffset {
-			offset = option
+			key = selectOptionTypeOffset
 		}
+
+		som[key] = append(som[key], option)
 	}
 
-	return wheres, limit, order, offset
+	return som
 }
 
 func Where(conditions string, args ...interface{}) NewSelectOption {
