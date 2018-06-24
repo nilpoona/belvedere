@@ -1,6 +1,9 @@
 package belvedere
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestWhereIn_Conditions(t *testing.T) {
 	tests := []struct {
@@ -77,6 +80,55 @@ func TestAnd_Conditions(t *testing.T) {
 			}
 			if e != tt.err {
 				t.Errorf("and.Conditions() err: %s expected value: %s", e, tt.err)
+			}
+		})
+	}
+}
+
+func TestAnd_Params(t *testing.T) {
+	tests := []struct {
+		name   string
+		wheres []NewSelectOption
+		want   []interface{}
+	}{
+		{
+			name: "Specify two fields with an AND condition",
+			wheres: []NewSelectOption{
+				Where("age = ?", 1),
+				Where("gender = ?", 'f'),
+			},
+
+			want: []interface{}{
+				1,
+				"f",
+			},
+		},
+		{
+			name: "Specify three fields with an AND condition",
+			wheres: []NewSelectOption{
+				Where("age = ?", 1),
+				Where("gender = ?", 'f'),
+				IN("id", 1, 2, 3),
+			},
+
+			want: []interface{}{
+				1,
+				"f",
+				1,
+				2,
+				3,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			aFnc := And(tt.wheres...)
+			a := aFnc()
+			p := a.Params()
+
+			if reflect.DeepEqual(p, tt.want) {
+				t.Errorf("and.Params() result: %v expected value: %v", p, tt.want)
 			}
 		})
 	}
