@@ -44,6 +44,11 @@ type (
 	offset struct {
 		offset uint
 	}
+
+	and struct {
+		newWheres []NewSelectOption
+		som       SelectOptionMap
+	}
 )
 
 var (
@@ -179,6 +184,65 @@ func (o *offset) Type() SelectOptionType {
 	return selectOptionTypeOffset
 }
 
+// and
+func (a *and) Conditions() (string, error) {
+	var buf bytes.Buffer
+	length := len(a.newWheres)
+	if length == 0 {
+		return "", nil
+	}
+
+	som := a.newSelectOptionMap()
+
+	for i, w := range som.Wheres() {
+		if w.Type() != selectOptionTypeWhere {
+			return "", ErrDifferentOptionType
+		}
+		c, err := w.Conditions()
+		if err != nil {
+			return "", err
+		}
+
+		buf.WriteString(c)
+		if i < length-1 {
+			buf.WriteString(" AND ")
+		}
+	}
+
+	return buf.String(), nil
+}
+
+func (a *and) newSelectOptionMap() SelectOptionMap {
+	if len(a.som) > 0 {
+		return a.som
+	}
+
+	som := newSelectOptionMap(a.newWheres...)
+	a.som = som
+
+	return som
+}
+
+func (a *and) Params() []interface{} {
+	length := len(a.newWheres)
+	if length == 0 {
+		return []interface{}{}
+	}
+
+	var params []interface{}
+
+	som := a.newSelectOptionMap()
+	for _, w := range som.Wheres() {
+		params = append(params, w.Params()...)
+	}
+
+	return params
+}
+
+func (a *and) Type() SelectOptionType {
+	return selectOptionTypeWhere
+}
+
 func buildWhereClause(selectOptions []SelectOption) (string, []interface{}, error) {
 	var buf bytes.Buffer
 	var values []interface{}
@@ -303,6 +367,14 @@ func Offset(amount uint) NewSelectOption {
 	return func() SelectOption {
 		return &offset{
 			offset: amount,
+		}
+	}
+}
+
+func And(neWheres ...NewSelectOption) NewSelectOption {
+	return func() SelectOption {
+		return &and{
+			newWheres: neWheres,
 		}
 	}
 }
