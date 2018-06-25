@@ -16,7 +16,7 @@ type (
 	QueryBuilder interface {
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
 		Update(ctx context.Context, src interface{}) (sql.Result, error)
-		SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error
+		SelectOne(ctx context.Context, dst interface{}) error
 		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error
 		Count(ctx context.Context, fn string, dst interface{}, options ...NewSelectOption) (int, error)
 	}
@@ -141,14 +141,27 @@ func (b *Belvedere) Update(ctx context.Context, src interface{}) (sql.Result, er
 	return result, nil
 }
 
-func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error {
+func (b *Belvedere) SelectOne(ctx context.Context, dst interface{}) error {
 	tableInfo := newTableInfo(dst)
 	q := fmt.Sprintf("SELECT * FROM %s", tableInfo.Name)
-	som := newSelectOptionMap(options...)
-	whereClause, whereParams, err := buildWhereClause(som.Wheres())
+
+	var conditions []byte
+	conditions = append(conditions, tableInfo.Pk.Name...)
+	conditions = append(conditions, " = ?"...)
+
+	pkv, err := tableInfo.PkValue()
 	if err != nil {
 		return err
 	}
+
+	newWhere := Where(string(conditions), pkv)
+	w := newWhere()
+
+	whereClause, whereParams, err := buildWhereClause([]SelectOption{w})
+	if err != nil {
+		return err
+	}
+
 	q = q + whereClause
 
 	stmt, e := b.db.PrepareContext(ctx, q)

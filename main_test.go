@@ -132,8 +132,10 @@ func TestBelvedere_SelectOne(t *testing.T) {
 		t.Fail()
 	}
 
-	dst := &User{}
-	e = b.SelectOne(ctx, dst, Where("id = ?", 1))
+	dst := &User{
+		ID: 1,
+	}
+	e = b.SelectOne(ctx, dst)
 	t.Log(dst)
 }
 
@@ -149,15 +151,20 @@ func TestBelvedere_Update(t *testing.T) {
 		t.Fail()
 	}
 
-	u := &User{}
-	e = b.SelectOne(ctx, u, Where("id = ?", 1))
+	u := &User{
+		ID: 1,
+	}
+	e = b.SelectOne(ctx, u)
 	t.Log(u)
 	u.Name = "baketarou"
 	r, e := b.Update(ctx, u)
 	t.Log(r)
 
-	nu := &User{}
-	e = b.SelectOne(ctx, nu, Where("id = ?", 1))
+	nu := &User{
+		ID: 1,
+	}
+
+	e = b.SelectOne(ctx, nu)
 	t.Log(nu.Name)
 }
 
