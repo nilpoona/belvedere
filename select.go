@@ -45,6 +45,10 @@ type (
 		offset uint
 	}
 
+	groupBy struct {
+		fieldName string
+	}
+
 	and struct {
 		newWheres []NewSelectOption
 		som       SelectOptionMap
@@ -57,10 +61,11 @@ type (
 )
 
 var (
-	selectOptionTypeWhere  = SelectOptionType("where")
-	selectOptionTypeLimit  = SelectOptionType("limit")
-	selectOptionTypeOrder  = SelectOptionType("order")
-	selectOptionTypeOffset = SelectOptionType("offset")
+	selectOptionTypeWhere   = SelectOptionType("where")
+	selectOptionTypeLimit   = SelectOptionType("limit")
+	selectOptionTypeOrder   = SelectOptionType("order")
+	selectOptionTypeGroupBy = SelectOptionType("group by")
+	selectOptionTypeOffset  = SelectOptionType("offset")
 )
 
 const (
@@ -102,6 +107,14 @@ func (som SelectOptionMap) Wheres() []SelectOption {
 
 func (som SelectOptionMap) Order() SelectOption {
 	if value, ok := som[selectOptionTypeOrder]; ok {
+		return value[0]
+	}
+
+	return nil
+}
+
+func (som SelectOptionMap) GroupBy() SelectOption {
+	if value, ok := som[selectOptionTypeGroupBy]; ok {
 		return value[0]
 	}
 
@@ -187,6 +200,21 @@ func (o *offset) Params() []interface{} {
 
 func (o *offset) Type() SelectOptionType {
 	return selectOptionTypeOffset
+}
+
+// group by
+func (g *groupBy) Conditions() (string, error) {
+	return " GROUP BY ?", nil
+}
+
+func (g *groupBy) Params() []interface{} {
+	return []interface{}{
+		g.fieldName,
+	}
+}
+
+func (g *groupBy) Type() SelectOptionType {
+	return selectOptionTypeGroupBy
 }
 
 // and
@@ -348,6 +376,15 @@ func buildOffsetClause(o SelectOption) (string, []interface{}, error) {
 	return conditions, o.Params(), nil
 }
 
+func buildGroupByClause(o SelectOption) (string, []interface{}) {
+	if o == nil {
+		return "", []interface{}{}
+	}
+
+	conditions, _ := o.Conditions()
+	return conditions, o.Params()
+}
+
 func buildLimitClause(o SelectOption) (string, []interface{}, error) {
 	if o == nil {
 		return "", []interface{}{}, nil
@@ -381,8 +418,9 @@ func newSelectOptionMap(optionFncs ...NewSelectOption) SelectOptionMap {
 			key = selectOptionTypeOrder
 		} else if t == selectOptionTypeOffset {
 			key = selectOptionTypeOffset
+		} else if t == selectOptionTypeGroupBy {
+			key = selectOptionTypeGroupBy
 		}
-
 		som[key] = append(som[key], option)
 	}
 
@@ -431,6 +469,14 @@ func Offset(amount uint) NewSelectOption {
 	return func() SelectOption {
 		return &offset{
 			offset: amount,
+		}
+	}
+}
+
+func GroupBy(fn string) NewSelectOption {
+	return func() SelectOption {
+		return &groupBy{
+			fieldName: fn,
 		}
 	}
 }

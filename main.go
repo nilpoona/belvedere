@@ -139,6 +139,7 @@ func columnToFieldIndex(t reflect.Type, cols []string) ([][]int, error) {
 
 	if len(missingColNames) > 0 {
 		return colToFieldIndex, errors.New("missing column")
+
 	}
 
 	return colToFieldIndex, nil
@@ -172,10 +173,13 @@ func (b *Belvedere) Select(ctx context.Context, dst interface{}, options ...NewS
 	orderClause, _ := buildOrderClause(som.Order())
 	offsetClause, offsetParams, _ := buildOffsetClause(som.Offset())
 
-	q = q + whereClause + orderClause + limitClause + offsetClause
+	groupByClause, groupByParams := buildGroupByClause(som.GroupBy())
+
+	q = q + whereClause + orderClause + groupByClause + limitClause + offsetClause
 
 	params := append(whereParams, limitParams...)
 	params = append(params, offsetParams...)
+	params = append(params, groupByParams...)
 
 	var rows *sql.Rows
 	if len(params) > 0 {
