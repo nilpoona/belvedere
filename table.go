@@ -75,6 +75,40 @@ func (ti *tableInfo) FieldPts() ([]interface{}, error) {
 	return fieldPts(ti.ColumnInfo, ti.ColumnValue)
 }
 
+func (ti *tableInfo) PkValue() (interface{}, error) {
+	f := ti.ColumnValue.Field(ti.Pk.Index)
+	if f.IsValid() {
+		switch f.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return f.Int(), nil
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			return f.Uint(), nil
+		case reflect.Float32, reflect.Float64:
+			return f.Float(), nil
+		case reflect.String:
+			return f.String(), nil
+		case reflect.Bool:
+			var value int
+			return value, nil
+		case reflect.Struct:
+			i := f.Interface()
+			if f.Type().String() == "time.Time" {
+				if value, ok := i.(time.Time); ok {
+					return value, nil
+				} else {
+					return nil, errors.New("cannot convert this type")
+				}
+			} else {
+				return nil, errors.New("cannot convert this type")
+			}
+		default:
+			return nil, errors.New("cannot convert this type")
+		}
+	}
+
+	return nil, errors.New("cannot convert this type")
+}
+
 func (ti *tableInfo) Values(excludePk bool) ([]interface{}, error) {
 	var values []interface{}
 	for i := 0; i < ti.ColumnInfo.NumField(); i++ {

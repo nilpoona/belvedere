@@ -15,6 +15,7 @@ import (
 type (
 	QueryBuilder interface {
 		Insert(ctx context.Context, src interface{}) (sql.Result, error)
+		Update(ctx context.Context, src interface{}) (sql.Result, error)
 		SelectOne(ctx context.Context, dst interface{}, options ...NewSelectOption) error
 		Select(ctx context.Context, dst interface{}, options ...NewSelectOption) error
 		Count(ctx context.Context, fn string, dst interface{}, options ...NewSelectOption) (int, error)
@@ -39,6 +40,10 @@ func getTableNameFromTypeName(typeName reflect.Type) string {
 	return camelToSnake(tableName)
 }
 
+func (b *Belvedere) DB() *sql.DB {
+	return b.db
+}
+
 // Insert
 func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, error) {
 	tableInfo := newTableInfo(src)
@@ -59,6 +64,75 @@ func (b *Belvedere) Insert(ctx context.Context, src interface{}) (sql.Result, er
 	}
 
 	result, e := stmt.ExecContext(ctx, values...)
+
+	if e != nil {
+		return nil, e
+	}
+
+	return result, nil
+}
+
+func buildUpdateQuery(tableName, columnNames string, whereClause string) string {
+	cns := strings.Split(columnNames, ",")
+	length := len(cns)
+	var b []byte
+	b = append(b, "UPDATE "...)
+	b = append(b, tableName...)
+	b = append(b, " SET "...)
+
+	for i, cn := range cns {
+		b = append(b, cn...)
+		b = append(b, " = ?"...)
+		if i < length-1 {
+			b = append(b, ", "...)
+		}
+	}
+
+	b = append(b, whereClause...)
+
+	return string(b)
+}
+
+func (b *Belvedere) Update(ctx context.Context, src interface{}) (sql.Result, error) {
+	tableInfo := newTableInfo(src)
+	columnNames := tableInfo.ColumnNames(true)
+	values, e := tableInfo.Values(true)
+
+	if e != nil {
+		return nil, e
+	}
+
+	var conditions []byte
+	conditions = append(conditions, tableInfo.Pk.Name...)
+	conditions = append(conditions, " = ?"...)
+
+	pkv, err := tableInfo.PkValue()
+	if err != nil {
+		return nil, err
+	}
+
+	newWhere := Where(string(conditions), pkv)
+	w := newWhere()
+
+	whereClause, whereParams, err := buildWhereClause([]SelectOption{w})
+	if err != nil {
+		return nil, err
+	}
+
+	q := buildUpdateQuery(
+		tableInfo.Name,
+		columnNames,
+		whereClause,
+	)
+
+	stmt, e := b.db.PrepareContext(ctx, q)
+
+	if e != nil {
+		return nil, e
+	}
+
+	params := append(values, whereParams...)
+	result, e := stmt.ExecContext(ctx, params...)
 
 	if e != nil {
 		return nil, e
