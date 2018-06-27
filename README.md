@@ -77,14 +77,14 @@ e := b.Select(ctx, &users, Where("age > ?", 20))
 e := b.Select(
   ctx,
   &users,
-  And(Where("age > ?", 20), Where("gendor > ?", "male")),
+  And(Where("age > ?", 20), Where("gendor = ?", "male")),
  )
 
 // 10 male users over the age of 20 are acquired.
 e := b.Select(
   ctx,
   &users,
-  And(Where("age > ?", 20), Where("gendor > ?", "male")),
+  And(Where("age > ?", 20), Where("gendor = ?", "male")),
   Limit(10),
  )
 
